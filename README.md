@@ -13,7 +13,6 @@ amazonq-proxy/
 │   ├── config/            # 配置管理
 │   └── utils/             # 工具函数
 ├── auth/                   # 授权服务（原始版本）
-├── auth-server/            # 授权服务（重构版本）
 ├── app.py                 # 主服务入口
 └── requirements.txt        # Python 依赖
 ```
@@ -31,6 +30,26 @@ python app.py
 
 ### Docker 运行
 
+**使用 Docker Compose（推荐）：**
+```bash
+# 启动服务
+docker-compose up -d
+
+# 查看日志
+docker-compose logs -f
+
+# 停止服务
+docker-compose down
+```
+
+**使用预构建镜像：**
+```bash
+# 使用 docker/docker-compose.yml
+cd docker
+docker-compose up -d
+```
+
+**手动构建：**
 ```bash
 docker build -t amazonq-proxy .
 docker run -p 8000:8000 amazonq-proxy
@@ -59,26 +78,3 @@ curl -X POST http://localhost:8000/v1/messages \
 
 - `PORT`: 服务端口 (默认: 8000)
 - `HTTP_PROXY`: HTTP/HTTPS 代理地址 (可选，格式: `http://host:port`)
-
-## 开发说明
-
-### 模块说明
-
-- **src/core**: 核心类型定义和请求转换逻辑
-- **src/amazonq**: Amazon Q API 客户端、事件解析器、流处理器
-- **src/api**: FastAPI 服务和认证中间件
-- **src/config**: API 配置和默认值
-- **src/utils**: 代理配置等工具函数
-
-### 运行测试
-
-```bash
-# 启动服务
-python app.py
-
-# 测试 API
-curl http://localhost:8000/v1/messages \
-  -H "x-api-key: YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"model": "claude-sonnet-4.5", "messages": [{"role": "user", "content": "Hello"}], "stream": true}'
-```

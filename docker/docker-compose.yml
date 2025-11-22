@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  amazonq-proxy:
+    image: ghcr.io/mamocode/amazonq:latest
+    container_name: amazonq-proxy
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      # - HTTP_PROXY=http://host.docker.internal:7890
+    restart: unless-stopped
