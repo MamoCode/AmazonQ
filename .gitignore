@@ -1,39 +1,30 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
+# Binaries
+*.exe
+*.exe~
+*.dll
 *.so
-.Python
-env/
-venv/
-.venv/
-ENV/
-build/
-develop-eggs/
+*.dylib
+bin/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# Environment
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# Environment variables
 .env
-.env.local
-*.log
 
-# Database
-*.sqlite3
-*.sqlite3-shm
-*.sqlite3-wal
-*.db
+# Auth credentials and config
+auth/auth_config.txt
+auth/amazonq_credentials.txt
 
 # IDE
 .vscode/
@@ -45,13 +36,3 @@ wheels/
 # OS
 .DS_Store
 Thumbs.db
-
-# Docker
-docker-compose.override.yml
-
-# Node (for auth-server)
-node_modules/
-package-lock.json
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
