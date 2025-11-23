@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 )
 
 // GetProxy 从环境变量获取代理配置
@@ -23,9 +24,10 @@ func GetProxy() string {
 func CreateProxyTransport() *http.Transport {
 	proxy := GetProxy()
 	transport := &http.Transport{
-		MaxIdleConns:        60,
-		MaxIdleConnsPerHost: 60,
-		IdleConnTimeout:     30,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		DisableKeepAlives:   false,
 	}
 
 	if proxy != "" {
