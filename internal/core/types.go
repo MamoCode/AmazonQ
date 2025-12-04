@@ -32,6 +32,12 @@ type ClaudeTool struct {
 	InputSchema map[string]interface{} `json:"input_schema"`          // JSON Schema 格式的输入定义
 }
 
+// ThinkingConfig Thinking 配置结构（符合 Claude API 规范）
+type ThinkingConfig struct {
+	Type         string `json:"type"`                    // 类型：enabled 或其他
+	BudgetTokens int    `json:"budget_tokens,omitempty"` // 思考预算 token 数
+}
+
 // ClaudeRequest Claude API 请求结构
 type ClaudeRequest struct {
 	Model       string          `json:"model"`                 // 模型名称
@@ -41,6 +47,7 @@ type ClaudeRequest struct {
 	Tools       []ClaudeTool    `json:"tools,omitempty"`       // 可用工具列表
 	Stream      bool            `json:"stream"`                // 是否流式响应
 	System      interface{}     `json:"system,omitempty"`      // 系统提示：string 或 []SystemBlock
+	Thinking    *ThinkingConfig `json:"thinking,omitempty"`    // Thinking 配置
 }
 
 // SystemBlock 系统提示块

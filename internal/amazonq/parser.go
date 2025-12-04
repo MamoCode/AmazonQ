@@ -229,11 +229,11 @@ func BuildMessageStart(conversationID string, model string, inputTokens int) str
 
 // BuildContentBlockStart 构建 content_block_start SSE 事件
 // 参数 index 为内容块索引
-// 参数 blockType 为内容块类型（如 "text" 或 "tool_use"）
+// 参数 blockType 为内容块类型（如 "text", "thinking" 或 "tool_use"）
 // 返回 SSE 格式的事件字符串
 func BuildContentBlockStart(index int, blockType string) string {
 	contentBlock := map[string]interface{}{"type": blockType}
-	if blockType == "text" {
+	if blockType == "text" || blockType == "thinking" {
 		contentBlock["text"] = ""
 	}
 

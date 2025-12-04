@@ -5,6 +5,13 @@ import (
 	"strings"
 )
 
+const (
+	// ThinkingStartTag thinking 块开始标签
+	ThinkingStartTag = "<thinking>"
+	// ThinkingEndTag thinking 块结束标签
+	ThinkingEndTag = "</thinking>"
+)
+
 // ClaudeStreamHandler Claude SSE 流处理器，将 Amazon Q 事件转换为 Claude API 格式
 type ClaudeStreamHandler struct {
 	Model                  string
@@ -22,6 +29,9 @@ type ClaudeStreamHandler struct {
 	ToolName               string
 	ProcessedToolUseIDs    map[string]bool
 	AllToolInputs          []string
+	// Thinking 相关状态
+	InThinkBlock           bool
+	ThinkBuffer            string
 }
 
 // NewClaudeStreamHandler 创建新的流处理器实例
@@ -79,18 +89,91 @@ func (h *ClaudeStreamHandler) HandleEvent(eventType string, payload interface{})
 			h.CurrentToolUse = nil
 		}
 
-		// 如果需要，启动内容块
-		if !h.ContentBlockStartSent {
-			h.ContentBlockIndex++
-			events = append(events, BuildContentBlockStart(h.ContentBlockIndex, "text"))
-			h.ContentBlockStartSent = true
-			h.ContentBlockStarted = true
-		}
-
-		// 发送增量
+		// 处理内容并检测 thinking 标签
 		if content != "" {
-			h.ResponseBuffer = append(h.ResponseBuffer, content)
-			events = append(events, BuildContentBlockDelta(h.ContentBlockIndex, content))
+			h.ThinkBuffer += content
+			pos := 0
+
+			for pos < len(h.ThinkBuffer) {
+				if !h.InThinkBlock {
+					// 查找 <thinking> 标签
+					thinkStart := strings.Index(h.ThinkBuffer[pos:], ThinkingStartTag)
+					if thinkStart != -1 {
+						thinkStart += pos
+						// 发送 <thinking> 之前的文本
+						beforeText := h.ThinkBuffer[pos:thinkStart]
+						if beforeText != "" {
+							if !h.ContentBlockStartSent {
+								h.ContentBlockIndex++
+								events = append(events, BuildContentBlockStart(h.ContentBlockIndex, "text"))
+								h.ContentBlockStartSent = true
+								h.ContentBlockStarted = true
+							}
+							h.ResponseBuffer = append(h.ResponseBuffer, beforeText)
+							events = append(events, BuildContentBlockDelta(h.ContentBlockIndex, beforeText))
+						}
+
+						// 关闭文本块并开启 thinking 块
+						if h.ContentBlockStartSent {
+							events = append(events, BuildContentBlockStop(h.ContentBlockIndex))
+							h.ContentBlockStopSent = true
+							h.ContentBlockStartSent = false
+						}
+
+						h.ContentBlockIndex++
+						events = append(events, BuildContentBlockStart(h.ContentBlockIndex, "thinking"))
+						h.ContentBlockStartSent = true
+						h.ContentBlockStarted = true
+						h.ContentBlockStopSent = false
+						h.InThinkBlock = true
+						pos = thinkStart + len(ThinkingStartTag)
+					} else {
+						// 没有找到 <thinking>，发送剩余内容为文本
+						remaining := h.ThinkBuffer[pos:]
+						if !h.ContentBlockStartSent {
+							h.ContentBlockIndex++
+							events = append(events, BuildContentBlockStart(h.ContentBlockIndex, "text"))
+							h.ContentBlockStartSent = true
+							h.ContentBlockStarted = true
+						}
+						h.ResponseBuffer = append(h.ResponseBuffer, remaining)
+						events = append(events, BuildContentBlockDelta(h.ContentBlockIndex, remaining))
+						h.ThinkBuffer = ""
+						break
+					}
+				} else {
+					// 查找 </thinking> 标签
+					thinkEnd := strings.Index(h.ThinkBuffer[pos:], ThinkingEndTag)
+					if thinkEnd != -1 {
+						thinkEnd += pos
+						// 发送 thinking 内容
+						thinkingText := h.ThinkBuffer[pos:thinkEnd]
+						if thinkingText != "" {
+							events = append(events, BuildContentBlockDelta(h.ContentBlockIndex, thinkingText))
+						}
+
+						// 关闭 thinking 块
+						events = append(events, BuildContentBlockStop(h.ContentBlockIndex))
+						h.ContentBlockStopSent = true
+						h.ContentBlockStartSent = false
+						h.InThinkBlock = false
+						pos = thinkEnd + len(ThinkingEndTag)
+					} else {
+						// 没有找到 </thinking>，发送剩余内容为 thinking
+						remaining := h.ThinkBuffer[pos:]
+						events = append(events, BuildContentBlockDelta(h.ContentBlockIndex, remaining))
+						h.ThinkBuffer = ""
+						break
+					}
+				}
+			}
+
+			// 保留未处理的内容在缓冲区
+			if pos < len(h.ThinkBuffer) {
+				h.ThinkBuffer = h.ThinkBuffer[pos:]
+			} else {
+				h.ThinkBuffer = ""
+			}
 		}
 	}
 

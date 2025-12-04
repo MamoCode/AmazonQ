@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +17,71 @@ func GetCurrentTimestamp() string {
 	weekday := now.Format("Monday")
 	isoTime := now.Format("2006-01-02T15:04:05.000Z07:00")
 	return fmt.Sprintf("%s, %s", weekday, isoTime)
+}
+
+// IsThinkingModeEnabled 检测是否启用了 thinking 模式
+// 参数 thinking 为 thinking 配置对象
+// 返回是否启用
+func IsThinkingModeEnabled(thinking *ThinkingConfig) bool {
+	if thinking == nil {
+		return false
+	}
+	return strings.ToLower(thinking.Type) == "enabled"
+}
+
+// GetThinkingBudgetTokens 获取 thinking 预算 token 数
+// 参数 thinking 为 thinking 配置对象
+// 返回预算 token 数（默认 16000）
+func GetThinkingBudgetTokens(thinking *ThinkingConfig) int {
+	if thinking == nil || thinking.BudgetTokens <= 0 {
+		return 16000
+	}
+	return thinking.BudgetTokens
+}
+
+// BuildThinkingHint 构建 thinking 提示词
+// 参数 budgetTokens 为预算 token 数
+// 返回格式化的 thinking 提示
+func BuildThinkingHint(budgetTokens int) string {
+	return fmt.Sprintf("<thinking_mode>interleaved</thinking_mode><max_thinking_length>%s</max_thinking_length>", strconv.Itoa(budgetTokens))
+}
+
+// AppendThinkingHint 在文本末尾追加 thinking 提示
+// 参数 text 为原始文本
+// 参数 hint 为 thinking 提示
+// 返回追加后的文本
+func AppendThinkingHint(text string, hint string) string {
+	normalized := strings.TrimSpace(text)
+	if strings.HasSuffix(normalized, hint) {
+		return text
+	}
+	if text == "" {
+		return hint
+	}
+	separator := ""
+	if !strings.HasSuffix(text, "\n") && !strings.HasSuffix(text, "\r") {
+		separator = "\n"
+	}
+	return fmt.Sprintf("%s%s%s", text, separator, hint)
+}
+
+// ContainsToolContent 检查内容是否包含工具调用或工具结果
+// 参数 content 为消息内容
+// 返回是否包含工具相关内容
+func ContainsToolContent(content interface{}) bool {
+	contentList, ok := content.([]interface{})
+	if !ok {
+		return false
+	}
+	for _, block := range contentList {
+		if blockMap, ok := block.(map[string]interface{}); ok {
+			btype, _ := blockMap["type"].(string)
+			if btype == "tool_result" || btype == "tool_use" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // MapModelName 将 Claude 模型名称映射到 Amazon Q 模型 ID
@@ -246,8 +312,10 @@ func MergeUserMessages(messages []UserInputMessage) UserInputMessage {
 
 // ProcessHistory 处理历史消息，转换为 Amazon Q 格式（交替的 user/assistant）
 // 参数 messages 为 Claude 消息列表
+// 参数 thinkingEnabled 为是否启用 thinking 模式
+// 参数 thinkingHint 为 thinking 提示词
 // 返回 Amazon Q 格式的历史消息列表
-func ProcessHistory(messages []ClaudeMessage) []HistoryEntry {
+func ProcessHistory(messages []ClaudeMessage, thinkingEnabled bool, thinkingHint string) []HistoryEntry {
 	var history []HistoryEntry
 	seenToolUseIDs := make(map[string]bool)
 	var rawHistory []HistoryEntry
@@ -259,6 +327,7 @@ func ProcessHistory(messages []ClaudeMessage) []HistoryEntry {
 			textContent := ""
 			var toolResults []ToolResult
 			images := ExtractImagesFromContent(content)
+			shouldAppendHint := thinkingEnabled && !ContainsToolContent(content)
 
 			if contentList, ok := content.([]interface{}); ok {
 				var textParts []string
@@ -277,6 +346,10 @@ func ProcessHistory(messages []ClaudeMessage) []HistoryEntry {
 				textContent = strings.Join(textParts, "\n")
 			} else {
 				textContent = ExtractTextFromContent(content)
+			}
+
+			if shouldAppendHint {
+				textContent = AppendThinkingHint(textContent, thinkingHint)
 			}
 
 			userCtx := UserInputMessageContext{
@@ -376,6 +449,11 @@ func ConvertClaudeToAmazonQRequest(req ClaudeRequest, conversationID string) (Am
 		conversationID = uuid.New().String()
 	}
 
+	// 检测 thinking 模式
+	thinkingEnabled := IsThinkingModeEnabled(req.Thinking)
+	budgetTokens := GetThinkingBudgetTokens(req.Thinking)
+	thinkingHint := BuildThinkingHint(budgetTokens)
+
 	// 1. 工具转换
 	var aqTools []AmazonQTool
 	var longDescTools []map[string]string
@@ -424,6 +502,11 @@ func ConvertClaudeToAmazonQRequest(req ClaudeRequest, conversationID string) (Am
 		} else {
 			promptContent = ExtractTextFromContent(content)
 		}
+	}
+
+	// 注入 thinking 提示（如果启用且不包含工具内容）
+	if thinkingEnabled && lastMsg != nil && !ContainsToolContent(lastMsg.Content) {
+		promptContent = AppendThinkingHint(promptContent, thinkingHint)
 	}
 
 	// 3. 上下文构建
@@ -511,7 +594,7 @@ func ConvertClaudeToAmazonQRequest(req ClaudeRequest, conversationID string) (Am
 	if len(req.Messages) > 1 {
 		historyMsgs = req.Messages[:len(req.Messages)-1]
 	}
-	aqHistory := ProcessHistory(historyMsgs)
+	aqHistory := ProcessHistory(historyMsgs, thinkingEnabled, thinkingHint)
 
 	// 8. 最终请求体
 	return AmazonQRequest{
