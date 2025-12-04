@@ -16,7 +16,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o amazonq-proxy cmd
 # 运行阶段
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates
+# 配置 Alpine 镜像源并安装 ca-certificates（添加重试机制）
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \
+    apk --no-cache add ca-certificates || \
+    (sed -i 's/mirrors.aliyun.com/dl-cdn.alpinelinux.org/g' /etc/apk/repositories && \
+     apk --no-cache add ca-certificates)
 
 WORKDIR /root/
 
