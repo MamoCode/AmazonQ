@@ -84,16 +84,6 @@ func ContainsToolContent(content interface{}) bool {
 	return false
 }
 
-// MapModelName 将 Claude 模型名称映射到 Amazon Q 模型 ID
-// 参数 claudeModel 为 Claude 模型名称
-// 返回对应的 Amazon Q 模型 ID
-func MapModelName(claudeModel string) string {
-	modelLower := strings.ToLower(claudeModel)
-	if strings.HasPrefix(modelLower, "claude-sonnet-4.5") || strings.HasPrefix(modelLower, "claude-sonnet-4-5") {
-		return "claude-sonnet-4.5"
-	}
-	return "claude-sonnet-4"
-}
 
 // ExtractTextFromContent 从 Claude 消息内容中提取纯文本
 // 参数 content 为 Claude 消息内容（可能是字符串或内容块数组）
@@ -575,28 +565,25 @@ func ConvertClaudeToAmazonQRequest(req ClaudeRequest, conversationID string) (Am
 		}
 	}
 
-	// 5. 模型映射
-	modelID := MapModelName(req.Model)
-
-	// 6. 用户输入消息
+	// 5. 用户输入消息
 	userInputMsg := UserInputMessage{
 		Content:                 formattedContent,
 		UserInputMessageContext: userCtx,
 		Origin:                  "CLI",
-		ModelID:                 modelID,
+		ModelID:                 req.Model,
 	}
 	if len(images) > 0 {
 		userInputMsg.Images = images
 	}
 
-	// 7. 历史消息处理
+	// 6. 历史消息处理
 	var historyMsgs []ClaudeMessage
 	if len(req.Messages) > 1 {
 		historyMsgs = req.Messages[:len(req.Messages)-1]
 	}
 	aqHistory := ProcessHistory(historyMsgs, thinkingEnabled, thinkingHint)
 
-	// 8. 最终请求体
+	// 7. 最终请求体
 	return AmazonQRequest{
 		ConversationState: ConversationState{
 			ConversationID: conversationID,
