@@ -206,10 +206,36 @@ func ExtractEventInfo(message *EventStreamMessage) *EventInfo {
 // FormatSSE 将事件格式化为 Server-Sent Events 格式
 // 参数 eventType 为事件类型
 // 参数 data 为事件数据
-// 返回 SSE 格式字符串
+// 返回 SSE 格式字符串，data 行格式为 data: {"type":...} 以确保兼容性
 func FormatSSE(eventType string, data interface{}) string {
-	jsonData, _ := json.Marshal(data)
-	return fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, string(jsonData))
+	dataMap, ok := data.(map[string]interface{})
+	if !ok {
+		jsonData, _ := json.Marshal(data)
+		return fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, string(jsonData))
+	}
+
+	// 确保 type 字段在 JSON 最前面
+	typeValue, hasType := dataMap["type"]
+	if !hasType {
+		jsonData, _ := json.Marshal(data)
+		return fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, string(jsonData))
+	}
+
+	// 手动构建 JSON，确保 type 在最前
+	typeJSON, _ := json.Marshal(typeValue)
+	delete(dataMap, "type")
+	restJSON, _ := json.Marshal(dataMap)
+	dataMap["type"] = typeValue // 恢复原 map
+
+	// 合并: {"type":xxx, ...rest}
+	var jsonData string
+	if len(restJSON) > 2 { // 不是空对象 "{}"
+		jsonData = fmt.Sprintf(`{"type":%s,%s`, string(typeJSON), string(restJSON)[1:])
+	} else {
+		jsonData = fmt.Sprintf(`{"type":%s}`, string(typeJSON))
+	}
+
+	return fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, jsonData)
 }
 
 // BuildMessageStart 构建 message_start SSE 事件
