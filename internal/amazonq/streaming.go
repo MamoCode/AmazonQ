@@ -23,6 +23,7 @@ type ClaudeStreamHandler struct {
 	ContentBlockStopSent   bool
 	MessageStartSent       bool
 	ConversationID         string
+	MessageID              string
 	CurrentToolUse         map[string]interface{}
 	ToolInputBuffer        []string
 	ToolUseID              string
@@ -32,6 +33,8 @@ type ClaudeStreamHandler struct {
 	// Thinking 相关状态
 	InThinkBlock           bool
 	ThinkBuffer            string
+	// 用于延迟发送 ping 事件
+	PingPending            bool
 }
 
 // NewClaudeStreamHandler 创建新的流处理器实例
@@ -72,9 +75,12 @@ func (h *ClaudeStreamHandler) HandleEvent(eventType string, payload interface{})
 				convID = "unknown"
 			}
 			h.ConversationID = convID
-			events = append(events, BuildMessageStart(convID, h.Model, h.InputTokens))
+			messageStartEvent, messageID := BuildMessageStart(h.Model, h.InputTokens)
+			h.MessageID = messageID
+			events = append(events, messageStartEvent)
 			h.MessageStartSent = true
-			events = append(events, BuildPing())
+			// 延迟发送 ping，等待第一个 content_block_start 之后
+			h.PingPending = true
 		}
 	}
 
@@ -108,6 +114,11 @@ func (h *ClaudeStreamHandler) HandleEvent(eventType string, payload interface{})
 								events = append(events, BuildContentBlockStart(h.ContentBlockIndex, "text"))
 								h.ContentBlockStartSent = true
 								h.ContentBlockStarted = true
+								// 在第一个 content_block_start 之后发送 ping
+								if h.PingPending {
+									events = append(events, BuildPing())
+									h.PingPending = false
+								}
 							}
 							h.ResponseBuffer = append(h.ResponseBuffer, beforeText)
 							events = append(events, BuildContentBlockDelta(h.ContentBlockIndex, beforeText))
@@ -125,6 +136,11 @@ func (h *ClaudeStreamHandler) HandleEvent(eventType string, payload interface{})
 						h.ContentBlockStartSent = true
 						h.ContentBlockStarted = true
 						h.ContentBlockStopSent = false
+						// 在第一个 content_block_start 之后发送 ping
+						if h.PingPending {
+							events = append(events, BuildPing())
+							h.PingPending = false
+						}
 						h.InThinkBlock = true
 						pos = thinkStart + len(ThinkingStartTag)
 					} else {
@@ -135,6 +151,11 @@ func (h *ClaudeStreamHandler) HandleEvent(eventType string, payload interface{})
 							events = append(events, BuildContentBlockStart(h.ContentBlockIndex, "text"))
 							h.ContentBlockStartSent = true
 							h.ContentBlockStarted = true
+							// 在第一个 content_block_start 之后发送 ping
+							if h.PingPending {
+								events = append(events, BuildPing())
+								h.PingPending = false
+							}
 						}
 						h.ResponseBuffer = append(h.ResponseBuffer, remaining)
 						events = append(events, BuildContentBlockDelta(h.ContentBlockIndex, remaining))
@@ -196,6 +217,11 @@ func (h *ClaudeStreamHandler) HandleEvent(eventType string, payload interface{})
 			h.ContentBlockIndex++
 
 			events = append(events, BuildToolUseStart(h.ContentBlockIndex, toolUseID, toolName))
+			// 在第一个 content_block_start 之后发送 ping
+			if h.PingPending {
+				events = append(events, BuildPing())
+				h.PingPending = false
+			}
 
 			h.ContentBlockStarted = true
 			h.CurrentToolUse = map[string]interface{}{

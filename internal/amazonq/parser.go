@@ -1,11 +1,21 @@
 package amazonq
 
 import (
+	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 )
+
+// GenerateMessageID 生成符合 Anthropic 标准的消息 ID
+// 格式: msg_ + 27位随机字符 (如 msg_01DR29h13tmavDaB7DRg7mD2)
+func GenerateMessageID() string {
+	bytes := make([]byte, 20)
+	rand.Read(bytes)
+	return "msg_" + hex.EncodeToString(bytes)[:27]
+}
 
 // EventStreamMessage 表示事件流中的单个消息
 type EventStreamMessage struct {
@@ -203,28 +213,35 @@ func FormatSSE(eventType string, data interface{}) string {
 }
 
 // BuildMessageStart 构建 message_start SSE 事件
-// 参数 conversationID 为会话 ID
 // 参数 model 为模型名称
 // 参数 inputTokens 为输入 token 数量
-// 返回 SSE 格式的事件字符串
-func BuildMessageStart(conversationID string, model string, inputTokens int) string {
+// 返回 SSE 格式的事件字符串和生成的消息 ID
+func BuildMessageStart(model string, inputTokens int) (string, string) {
+	messageID := GenerateMessageID()
 	data := map[string]interface{}{
 		"type": "message_start",
 		"message": map[string]interface{}{
-			"id":            conversationID,
+			"model":         model,
+			"id":            messageID,
 			"type":          "message",
 			"role":          "assistant",
 			"content":       []interface{}{},
-			"model":         model,
 			"stop_reason":   nil,
 			"stop_sequence": nil,
-			"usage": map[string]int{
-				"input_tokens":  inputTokens,
-				"output_tokens": 0,
+			"usage": map[string]interface{}{
+				"input_tokens":                inputTokens,
+				"cache_creation_input_tokens": 0,
+				"cache_read_input_tokens":     0,
+				"cache_creation": map[string]int{
+					"ephemeral_5m_input_tokens": 0,
+					"ephemeral_1h_input_tokens": 0,
+				},
+				"output_tokens": 1,
+				"service_tier":  "standard",
 			},
 		},
 	}
-	return FormatSSE("message_start", data)
+	return FormatSSE("message_start", data), messageID
 }
 
 // BuildContentBlockStart 构建 content_block_start SSE 事件
@@ -296,8 +313,11 @@ func BuildMessageStop(inputTokens int, outputTokens int, stopReason *string) str
 			"stop_reason":   reason,
 			"stop_sequence": nil,
 		},
-		"usage": map[string]int{
-			"output_tokens": outputTokens,
+		"usage": map[string]interface{}{
+			"input_tokens":                inputTokens,
+			"cache_creation_input_tokens": 0,
+			"cache_read_input_tokens":     0,
+			"output_tokens":               outputTokens,
 		},
 	}
 	deltaEvent := FormatSSE("message_delta", deltaData)
